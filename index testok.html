@@ -1,0 +1,536 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>JKS HOUSE | Automação Residencial</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+
+    .painel {
+      max-width: 800px;
+      margin: auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      color: #38bdf8;
+      font-size: 36px;
+      margin-bottom: 6px;
+    }
+
+    h2 {
+      margin-top: 30px;
+      font-size: 21px;
+    }
+
+    .subtitulo {
+      color: #94a3b8;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .grade {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+    }
+
+    .grade .card {
+      margin-bottom: 0;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #0284c7;
+      color: white;
+      border: none;
+      border-radius: 9px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button.ligado {
+      background: #dc2626;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .estado {
+      color: #cbd5e1;
+      margin: 14px 0;
+    }
+
+    .valor {
+      color: #38bdf8;
+      font-size: 30px;
+      font-weight: bold;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      background: #334155;
+      font-weight: bold;
+    }
+
+    .online {
+      color: #4ade80;
+    }
+
+    .offline {
+      color: #f87171;
+    }
+
+    .mensagem {
+      color: #94a3b8;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 480px) {
+      .grade {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+</head>
+
+<body>
+
+<div class="painel">
+
+  <header>
+    <h1>🏠 JKS HOUSE</h1>
+    <p class="subtitulo">
+      Automação Residencial Inteligente
+    </p>
+    <p class="subtitulo">
+      TCC II - Engenharia Elétrica
+    </p>
+  </header>
+
+  <div class="card">
+    <h3>Comunicação MQTT</h3>
+
+    <div id="statusMQTT" class="status">
+      Conectando...
+    </div>
+
+    <p id="ultimaMensagem" class="mensagem">
+      Aguardando comunicação com o ESP32
+    </p>
+  </div>
+
+  <h2>💡 Controle de Iluminação</h2>
+
+  <div class="grade">
+
+    <div class="card">
+      <h3>Sala</h3>
+      <p id="estado-sala" class="estado">
+        Aguardando
+      </p>
+      <button id="btn-sala"
+              onclick="alternarLuz('sala')" disabled>
+        Aguardando
+      </button>
+    </div>
+
+    <div class="card">
+      <h3>Cozinha</h3>
+      <p id="estado-cozinha" class="estado">
+        Aguardando
+      </p>
+      <button id="btn-cozinha"
+              onclick="alternarLuz('cozinha')" disabled>
+        Aguardando
+      </button>
+    </div>
+
+    <div class="card">
+      <h3>Quarto</h3>
+      <p id="estado-quarto" class="estado">
+        Aguardando
+      </p>
+      <button id="btn-quarto"
+              onclick="alternarLuz('quarto')" disabled>
+        Aguardando
+      </button>
+    </div>
+
+    <div class="card">
+      <h3>Garagem</h3>
+      <p id="estado-garagem" class="estado">
+        Aguardando
+      </p>
+      <button id="btn-garagem"
+              onclick="alternarLuz('garagem')" disabled>
+        Aguardando
+      </button>
+    </div>
+
+  </div>
+
+  <h2>🚪 Portão de Entrada</h2>
+
+  <div class="card">
+    <h3>Controle do Portão</h3>
+
+    <p id="estadoPortao" class="estado">
+      Aguardando
+    </p>
+
+    <button id="btnPortao"
+            onclick="acionarPortao()" disabled>
+      Aguardando
+    </button>
+  </div>
+
+  <h2>🌡️ Monitoramento Ambiental</h2>
+
+  <div class="grade">
+
+    <div class="card">
+      <h3>Temperatura</h3>
+      <div id="temperatura" class="valor">
+        -- °C
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Umidade</h3>
+      <div id="umidade" class="valor">
+        -- %
+      </div>
+    </div>
+
+  </div>
+
+  <p class="mensagem">
+    Protótipo didático de automação residencial.
+    Não utilizar para controlar portões reais.
+  </p>
+
+</div>
+
+<script>
+
+  // =====================================
+  // JKS HOUSE - COMUNICACAO MQTT
+  // =====================================
+
+  const BASE = "jks-house-tcc26-k7m42";
+
+  const TOPICO_COMANDO = BASE + "/comando";
+  const TOPICO_ESTADO = BASE + "/estado";
+  const TOPICO_SENSOR = BASE + "/sensor";
+  const TOPICO_PORTAO = BASE + "/portao";
+
+  const ambientes = [
+    "sala", "cozinha", "quarto", "garagem"
+  ];
+
+  const estados = {
+    sala: null,
+    cozinha: null,
+    quarto: null,
+    garagem: null
+  };
+
+  let estadoPortao = null;
+
+  const statusMQTT =
+    document.getElementById("statusMQTT");
+
+  const ultimaMensagem =
+    document.getElementById("ultimaMensagem");
+
+  // CONECTAR AO BROKER MQTT
+  const cliente = mqtt.connect(
+    "wss://broker.emqx.io:8084/mqtt",
+    {
+      clientId: "JKS-Painel-" +
+        Math.random().toString(16).slice(2),
+
+      reconnectPeriod: 3000,
+      connectTimeout: 10000,
+      clean: true
+    }
+  );
+
+  // =====================================
+  // ATUALIZAR ESTADOS NA TELA
+  // =====================================
+
+  function atualizarInterface() {
+
+    ambientes.forEach(function(nome) {
+
+      const botao =
+        document.getElementById("btn-" + nome);
+
+      const indicador =
+        document.getElementById("estado-" + nome);
+
+      const estado = estados[nome];
+
+      if (estado === null) {
+
+        indicador.textContent = "Aguardando estado";
+        botao.textContent = "Aguardando";
+        botao.disabled = true;
+        botao.classList.remove("ligado");
+
+        return;
+      }
+
+      indicador.textContent =
+        estado ? "Luz ligada" : "Luz desligada";
+
+      botao.textContent =
+        estado ? "Desligar" : "Ligar";
+
+      botao.classList.toggle("ligado", estado);
+
+      botao.disabled = !cliente.connected;
+    });
+
+    const botaoPortao =
+      document.getElementById("btnPortao");
+
+    const indicadorPortao =
+      document.getElementById("estadoPortao");
+
+    if (estadoPortao === null) {
+
+      indicadorPortao.textContent = "Aguardando";
+      botaoPortao.textContent = "Aguardando";
+      botaoPortao.disabled = true;
+
+      return;
+    }
+
+    indicadorPortao.textContent = estadoPortao;
+
+    if (estadoPortao === "MOVENDO") {
+
+      botaoPortao.textContent = "Em movimento...";
+      botaoPortao.disabled = true;
+
+    } else {
+
+      botaoPortao.textContent =
+        estadoPortao === "ABERTO" ?
+        "Fechar portão" : "Abrir portão";
+
+      botaoPortao.disabled = !cliente.connected;
+    }
+  }
+
+  // =====================================
+  // ENVIAR COMANDOS
+  // =====================================
+
+  function enviarComando(comando) {
+
+    if (!cliente.connected) {
+      alert("MQTT desconectado!");
+      return;
+    }
+
+    cliente.publish(
+      TOPICO_COMANDO,
+      comando,
+      {
+        qos: 0,
+        retain: false
+      },
+      function(erro) {
+        if (erro) {
+          console.error("Erro no envio:", erro);
+        }
+      }
+    );
+
+    ultimaMensagem.textContent =
+      "Comando enviado: " + comando;
+  }
+
+  function alternarLuz(nome) {
+
+    if (estados[nome] === null) return;
+
+    const comando =
+      estados[nome] ? "OFF" : "ON";
+
+    enviarComando(nome + "/" + comando);
+  }
+
+  function acionarPortao() {
+
+    if (estadoPortao === null ||
+        estadoPortao === "MOVENDO") {
+      return;
+    }
+
+    enviarComando("portao/ACIONAR");
+  }
+
+  // =====================================
+  // CONEXAO MQTT ESTABELECIDA
+  // =====================================
+
+  cliente.on("connect", function() {
+
+    statusMQTT.textContent = "MQTT CONECTADO";
+    statusMQTT.className = "status online";
+
+    cliente.subscribe(
+      [
+        TOPICO_ESTADO,
+        TOPICO_SENSOR,
+        TOPICO_PORTAO
+      ],
+      function(erro) {
+
+        if (erro) {
+          console.error("Erro de inscrição:", erro);
+        } else {
+          console.log("JKS HOUSE: tópicos inscritos");
+        }
+      }
+    );
+
+    atualizarInterface();
+  });
+
+  // =====================================
+  // RECEBER MENSAGENS DO ESP32
+  // =====================================
+
+  cliente.on("message", function(topico, payload) {
+
+    const texto = payload.toString();
+
+    console.log("MQTT recebido:", topico, texto);
+
+    ultimaMensagem.textContent =
+      "Última mensagem: " + texto;
+
+    try {
+
+      if (topico === TOPICO_ESTADO) {
+
+        const dados = JSON.parse(texto);
+
+        ambientes.forEach(function(nome) {
+
+          if (typeof dados[nome] === "boolean") {
+            estados[nome] = dados[nome];
+          }
+        });
+
+        atualizarInterface();
+      }
+
+      if (topico === TOPICO_SENSOR) {
+
+        const dados = JSON.parse(texto);
+
+        if (typeof dados.temperatura === "number") {
+
+          document.getElementById("temperatura")
+            .textContent =
+              dados.temperatura.toFixed(1) + " °C";
+        }
+
+        if (typeof dados.umidade === "number") {
+
+          document.getElementById("umidade")
+            .textContent =
+              dados.umidade.toFixed(1) + " %";
+        }
+      }
+
+      if (topico === TOPICO_PORTAO) {
+
+        if ([
+          "ABERTO",
+          "FECHADO",
+          "MOVENDO"
+        ].includes(texto)) {
+
+          estadoPortao = texto;
+          atualizarInterface();
+        }
+      }
+
+    } catch(erro) {
+
+      console.error(
+        "Erro ao interpretar MQTT:",
+        erro
+      );
+    }
+  });
+
+  // =====================================
+  // DESCONEXAO E RECONEXAO
+  // =====================================
+
+  cliente.on("close", function() {
+
+    statusMQTT.textContent = "MQTT DESCONECTADO";
+    statusMQTT.className = "status offline";
+
+    atualizarInterface();
+  });
+
+  cliente.on("reconnect", function() {
+
+    statusMQTT.textContent = "Reconectando...";
+    statusMQTT.className = "status";
+  });
+
+  cliente.on("error", function(erro) {
+
+    console.error("Erro MQTT:", erro.message);
+  });
+
+</script>
+
+</body>
+</html>
